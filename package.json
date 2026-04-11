@@ -1,0 +1,47 @@
+{
+  "name": "cerca-trova-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for creator registration, bookings, timers, Google Sheets sync, and admin workflows.",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "node scripts/prismaMigrate.js",
+    "prisma:seed": "node prisma/seed.js",
+    "prisma:studio": "prisma studio",
+    "job:overdue": "node scripts/runOverdueCheck.js",
+    "admin:create": "node scripts/createAdmin.js",
+    "google-sheets:check": "node scripts/checkGoogleSheets.js",
+    "google-sheets:reset": "node scripts/resetGoogleSheet.js",
+    "google-sheets:reset:dry-run": "node scripts/resetGoogleSheet.js --dry-run",
+    "google-sheets:reset:apply": "node scripts/resetGoogleSheet.js --apply",
+    "cleanup:test-bookings": "node scripts/cleanupTestData.js",
+    "cleanup:test-data": "node scripts/cleanupTestData.js",
+    "cleanup:test-data:dry-run": "node scripts/cleanupTestData.js --dry-run",
+    "cleanup:test-data:apply": "node scripts/cleanupTestData.js --apply",
+    "clear:bookings": "node scripts/clearAllBookings.js",
+    "clear:bookings:dry-run": "node scripts/clearAllBookings.js --dry-run",
+    "clear:bookings:apply": "node scripts/clearAllBookings.js --apply"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "dayjs": "1.11.20",
+    "dotenv": "17.4.1",
+    "googleapis": "171.4.0",
+    "nodemailer": "^7.0.3",
+    "pino": "10.3.1",
+    "telegraf": "4.16.3",
+    "uuid": "13.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "3.1.14",
+    "pino-pretty": "13.1.3",
+    "prisma": "6.19.3"
+  }
+}

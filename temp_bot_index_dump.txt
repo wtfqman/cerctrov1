@@ -1,0 +1,48 @@
+﻿import { Scenes, Telegraf, session } from 'telegraf';
+
+import { registerCommands } from './commands.js';
+import { registerAdminHandlers } from './handlers/adminHandlers.js';
+import { registerMenuHandlers } from './handlers/menuHandlers.js';
+import { createContextMiddleware } from './middlewares/context.js';
+import { registerErrorHandler } from './middlewares/errorHandler.js';
+import { createLoggingMiddleware } from './middlewares/logging.js';
+import { createAdminBoutiqueScene } from './scenes/adminBoutiqueScene.js';
+import { createAdminSlotScene } from './scenes/adminSlotScene.js';
+import { createAdminTimeSlotScene } from './scenes/adminTimeSlotScene.js';
+import { createAdminUserScene } from './scenes/adminUserScene.js';
+import { createBookingScene } from './scenes/bookingScene.js';
+import { createRegistrationScene } from './scenes/registrationScene.js';
+
+export async function createBot({ env, logger, services }) {
+  const bot = new Telegraf(env.BOT_TOKEN);
+  const stage = new Scenes.Stage([
+    createRegistrationScene(),
+    createBookingScene(),
+    createAdminSlotScene(),
+    createAdminUserScene(),
+    createAdminBoutiqueScene(),
+    createAdminTimeSlotScene(),
+  ]);
+
+  registerErrorHandler(bot, { logger });
+
+  bot.use(createLoggingMiddleware({ logger }));
+  bot.use(createContextMiddleware({ env, logger, services }));
+  bot.use(session());
+  bot.use(stage.middleware());
+
+  registerCommands(bot, { env, services });
+  registerAdminHandlers(bot, { env, services });
+  registerMenuHandlers(bot, { env, services });
+
+  await bot.telegram.setMyCommands([
+    { command: 'start', description: 'Р—Р°РїСѓСЃС‚РёС‚СЊ Р±РѕС‚Р°' },
+    { command: 'booking', description: 'РЎРѕР·РґР°С‚СЊ Р·Р°СЏРІРєСѓ' },
+    { command: 'menu', description: 'РџРѕРєР°Р·Р°С‚СЊ РіР»Р°РІРЅРѕРµ РјРµРЅСЋ' },
+    { command: 'help', description: 'РџРѕРјРѕС‰СЊ' },
+    { command: 'registration', description: 'РџСЂРѕР№С‚Рё СЂРµРіРёСЃС‚СЂР°С†РёСЋ' },
+    { command: 'admin', description: 'РћС‚РєСЂС‹С‚СЊ Р°РґРјРёРЅРєСѓ' },
+  ]);
+
+  return bot;
+}

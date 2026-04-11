@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum BookingStatus {
+  CREATED
+  SUBMITTED
+  CANCELLED
+  COMPLETED
+}
+
+enum BookingRequestType {
+  RETURN
+  PICKUP
+  RETURN_PICKUP
+}
+
+enum VisitMode {
+  BOUTIQUE
+  DELIVERY
+}
+
+enum TimerStatus {
+  ACTIVE
+  RETURNED
+  OVERDUE
+}
+
+enum DocumentKind {
+  REGISTRATION_FORM
+  BOOKING_CONFIRMATION
+  RETURN_ACT
+  OTHER
+}
+
+enum AdminRole {
+  FULL
+  LIMITED
+}
+
+enum AuditActorType {
+  SYSTEM
+  USER
+  ADMIN
+}
+
+model User {
+  id               String    @id @default(cuid())
+  telegramId       String    @unique
+  username         String?
+  firstName        String?
+  lastName         String?
+  phone            String?
+  languageCode     String?
+  isBot            Boolean   @default(false)
+  isBlocked        Boolean   @default(false)
+  blockedReason    String?
+  blockedUntil     DateTime?
+  blockedByAdminId String?
+  lastSeenAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  registration   Registration?
+  bookings       Booking[]
+  timers         UserItemTimer[]
+  generatedPdfs  UserPdf[]
+  personalPdf    UserPersonalPdf?
+  adminProfile   Admin?           @relation("AdminUser")
+  blockedByAdmin Admin?           @relation("UserBlockedByAdmin", fields: [blockedByAdminId], references: [id], onDelete: SetNull)
+  auditLogs      AuditLog[]       @relation("AuditLogUser")
+
+  @@index([isBlocked])
+}
+
+model Registration {
+  id               String             @id @default(cuid())
+  userId           String             @unique
+  status           RegistrationStatus @default(APPROVED)
+  fullName         String
+  phone            String             @unique
+  telegramUsername String
+  address          String
+  homeAddress      String?
+  cdekAddress      String?
+  sizes            String
+  externalSheetRow String?
+  approvedAt       DateTime?
+  pdfSentAt        DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+}
+
+model Booking {
+  id               String             @id @default(cuid())
+  publicId         String             @unique
+  userId           String
+  registrationId   String?
+  requestType      BookingRequestType
+  visitMode        VisitMode
+  status           BookingStatus      @default(CREATED)
+  boutiqueId       String?
+  timeSlotId       String?
+  activeSlotKey    String?            @unique
+  boutiqueAddress  String?
+  visitDate        DateTime?
+  slotLabel        String?
+  deliveryAddress  String?
+  contactPhone     String?
+  wishText         String?
+  externalSheetRow String?
+  submittedAt      DateTime?
+  cancelledAt      DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registration Registration?   @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  boutique     Boutique?       @relation(fields: [boutiqueId], references: [id], onDelete: SetNull)
+  timeSlot     TimeSlot?       @relation(fields: [timeSlotId], references: [id], onDelete: SetNull)
+  timers       UserItemTimer[]
+  documents    UserPdf[]
+
+  @@index([userId, createdAt])
+  @@index([visitMode, visitDate])
+  @@index([boutiqueId, timeSlotId, visitDate])
+}
+
+model Boutique {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  addressLine1 String
+  addressLine2 String?
+  city         String?
+  email        String?
+  ccEmails     String?
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  timeSlots    TimeSlot[]
+  bookings     Booking[]
+  slotClosures SlotClosure[]
+
+  @@index([isActive, name])
+}
+
+model TimeSlot {
+  id         String   @id @default(cuid())
+  boutiqueId String
+  label      String
+  startTime  String
+  endTime    String
+  capacity   Int      @default(1)
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  boutique Boutique      @relation(fields: [boutiqueId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+  closures SlotClosure[]
+
+  @@unique([boutiqueId, startTime, endTime])
+  @@index([boutiqueId, isActive, sortOrder])
+}
+
+model SlotClosure {
+  id              String   @id @default(cuid())
+  boutiqueId      String
+  timeSlotId      String
+  date            DateTime
+  reason          String?
+  closedByAdminId String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  boutique      Boutique @relation(fields: [boutiqueId], references: [id], onDelete: Cascade)
+  timeSlot      TimeSlot @relation(fields: [timeSlotId], references: [id], onDelete: Cascade)
+  closedByAdmin Admin?   @relation(fields: [closedByAdminId], references: [id], onDelete: SetNull)
+
+  @@unique([timeSlotId, date])
+  @@index([boutiqueId, date])
+}
+
+model Admin {
+  id                           String    @id @default(cuid())
+  userId                       String    @unique
+  role                         AdminRole @default(LIMITED)
+  displayName                  String?
+  notificationChatId           String?
+  receivesOverdueAlerts        Boolean   @default(false)
+  receivesBookingNotifications Boolean   @default(false)
+  isActive                     Boolean   @default(true)
+  createdByAdminId             String?
+  lastModifiedByAdminId        String?
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
+
+  user                User          @relation("AdminUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdByAdmin      Admin?        @relation("AdminCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  lastModifiedByAdmin Admin?        @relation("AdminLastModifiedBy", fields: [lastModifiedByAdminId], references: [id], onDelete: SetNull)
+  createdAdmins       Admin[]       @relation("AdminCreatedBy")
+  modifiedAdmins      Admin[]       @relation("AdminLastModifiedBy")
+  blockedUsers        User[]        @relation("UserBlockedByAdmin")
+  slotClosures        SlotClosure[]
+  auditLogs           AuditLog[]    @relation("AuditLogAdmin")
+
+  @@index([isActive, receivesOverdueAlerts])
+  @@index([isActive, receivesBookingNotifications])
+}
+
+model UserItemTimer {
+  id               String      @id @default(cuid())
+  userId           String
+  bookingId        String?
+  activeTimerKey   String?     @unique
+  status           TimerStatus @default(ACTIVE)
+  takenAt          DateTime
+  dueAt            DateTime?
+  reminderAt       DateTime?
+  adminAlertAt     DateTime?
+  reminderSentAt   DateTime?
+  adminAlertSentAt DateTime?
+  returnedAt       DateTime?
+  note             String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([status, reminderSentAt, adminAlertSentAt])
+}
+
+model PdfTemplate {
+  id                String   @id @default(cuid())
+  key               String   @unique
+  name              String
+  description       String?
+  storagePath       String
+  fileName          String?
+  mimeType          String?
+  telegramFileId    String?
+  uploadedByAdminId String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  userPdfs UserPdf[]
+}
+
+model UserPdf {
+  id             String       @id @default(cuid())
+  userId         String
+  bookingId      String?
+  templateId     String?
+  documentKind   DocumentKind
+  fileName       String
+  storagePath    String
+  telegramFileId String?
+  externalUrl    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  booking  Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  template PdfTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([userId, documentKind])
+}
+
+model UserPersonalPdf {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  telegramFileId String
+  fileName       String
+  mimeType       String
+  uploadedAt     DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String         @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String?
+  message    String?
+  metadata   String?
+  actorType  AuditActorType
+  userId     String?
+  adminId    String?
+  createdAt  DateTime       @default(now())
+
+  user  User?  @relation("AuditLogUser", fields: [userId], references: [id], onDelete: SetNull)
+  admin Admin? @relation("AuditLogAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
