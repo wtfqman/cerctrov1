@@ -244,4 +244,10 @@ export const DEFAULT_TIME_SLOTS = Object.freeze([
     endTime: '16:00',
     sortOrder: 50,
   },
+  {
+    label: '16-17',
+    startTime: '16:00',
+    endTime: '17:00',
+    sortOrder: 60,
+  },
 ]);
