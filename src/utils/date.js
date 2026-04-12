@@ -17,6 +17,19 @@ const BOOKING_DATE_EXCLUSIONS = Object.freeze([
 ]);
 export const DEFAULT_BOOKING_WORKING_DAYS_WINDOW = 7;
 
+function getBookingWeekStartDay(value) {
+  const normalizedDate = dayjs(value).tz(env.DEFAULT_TIMEZONE).startOf('day');
+
+  if (!normalizedDate.isValid()) {
+    return null;
+  }
+
+  const weekday = normalizedDate.day();
+  const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
+
+  return normalizedDate.subtract(daysFromMonday, 'day').startOf('day');
+}
+
 export function now() {
   return dayjs().tz(env.DEFAULT_TIMEZONE);
 }
@@ -46,6 +59,51 @@ export function isBookingWorkingDay(value) {
   }
 
   return !BOOKING_NON_WORKING_WEEKDAYS.has(normalizedDate.day()) && !isBookingExcludedDate(normalizedDate);
+}
+
+export function isCurrentWeekBookingDate(value, fromValue = null) {
+  const normalizedDate = dayjs(value).tz(env.DEFAULT_TIMEZONE).startOf('day');
+  const referenceDate = (fromValue ? dayjs(fromValue) : now()).tz(env.DEFAULT_TIMEZONE).startOf('day');
+
+  if (!normalizedDate.isValid() || !referenceDate.isValid()) {
+    return false;
+  }
+
+  const currentWeekStart = getBookingWeekStartDay(referenceDate);
+  const dateWeekStart = getBookingWeekStartDay(normalizedDate);
+
+  if (!currentWeekStart || !dateWeekStart) {
+    return false;
+  }
+
+  return (
+    !normalizedDate.isBefore(referenceDate, 'day') &&
+    dateWeekStart.isSame(currentWeekStart, 'day') &&
+    isBookingWorkingDay(normalizedDate)
+  );
+}
+
+export function getCurrentWeekBookingDates(fromValue = null) {
+  const referenceDate = (fromValue ? dayjs(fromValue) : now()).tz(env.DEFAULT_TIMEZONE).startOf('day');
+
+  if (!referenceDate.isValid()) {
+    return [];
+  }
+
+  const currentWeekStart = getBookingWeekStartDay(referenceDate);
+  const currentWeekEnd = currentWeekStart.add(6, 'day');
+  const dates = [];
+  let cursor = referenceDate;
+
+  while (!cursor.isAfter(currentWeekEnd, 'day')) {
+    if (isBookingWorkingDay(cursor)) {
+      dates.push(cursor.toDate());
+    }
+
+    cursor = cursor.add(1, 'day');
+  }
+
+  return dates;
 }
 
 export function getNextAvailableBookingDates(count = DEFAULT_BOOKING_WORKING_DAYS_WINDOW, fromValue = null) {

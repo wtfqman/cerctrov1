@@ -352,7 +352,7 @@ async function promptBoutiqueStep(ctx, notice = '') {
 
 async function promptDateStep(ctx, notice = '') {
   const state = getSceneState(ctx);
-  const dateOptions = ctx.state.services.bookingService.getAvailableVisitDates().map((value) => ({
+  const dateOptions = ctx.state.services.bookingService.getCurrentWeekVisitDates().map((value) => ({
     code: formatDate(value, 'YYYY-MM-DD'),
     kind: USER_UI_OPTION_KINDS.DATE,
     label: formatDate(value, 'DD.MM dd'),
@@ -362,7 +362,7 @@ async function promptDateStep(ctx, notice = '') {
   state.dateOptions = dateOptions;
 
   if (dateOptions.length === 0) {
-    await leaveWithMainMenu(ctx, 'Сейчас нет доступных дат.');
+    await leaveWithMainMenu(ctx, BOT_TEXTS.BOOKING_CURRENT_WEEK_UNAVAILABLE);
     return false;
   }
 

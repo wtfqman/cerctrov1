@@ -1,6 +1,7 @@
 import { BookingStatus, VisitMode } from '@prisma/client';
 import { Scenes } from 'telegraf';
 
+import { BOT_TEXTS } from '../../utils/constants.js';
 import { getUserVisibleBoutiqueLabel } from '../../utils/boutiques.js';
 import { formatDate } from '../../utils/date.js';
 import { AppError } from '../../utils/errors.js';
@@ -149,7 +150,7 @@ async function leaveToMainMenu(ctx, message) {
 
 async function promptDateStep(ctx, notice = '') {
   const state = getSceneState(ctx);
-  state.dateOptions = ctx.state.services.bookingService.getAvailableVisitDates().map((value) => ({
+  state.dateOptions = ctx.state.services.bookingService.getCurrentWeekVisitDates().map((value) => ({
     code: formatDate(value, 'YYYY-MM-DD'),
     kind: USER_UI_OPTION_KINDS.DATE,
     label: formatDate(value, 'DD.MM dd'),
@@ -157,7 +158,7 @@ async function promptDateStep(ctx, notice = '') {
   }));
 
   if (state.dateOptions.length === 0) {
-    await leaveBackToCurrentCard(ctx, notice || 'Сейчас нет доступных дат.');
+    await leaveBackToCurrentCard(ctx, notice || BOT_TEXTS.BOOKING_CURRENT_WEEK_UNAVAILABLE);
     return false;
   }
 

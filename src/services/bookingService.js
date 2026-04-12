@@ -1,12 +1,14 @@
 import { BookingRequestType, BookingStatus, Prisma, TimerStatus, VisitMode } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 
-import { ADMIN_PERMISSIONS, AUDIT_ACTIONS } from '../utils/constants.js';
+import { ADMIN_PERMISSIONS, AUDIT_ACTIONS, BOT_TEXTS } from '../utils/constants.js';
 import {
   dayjs,
   DEFAULT_BOOKING_WORKING_DAYS_WINDOW,
   formatDate,
+  getCurrentWeekBookingDates,
   getNextAvailableBookingDates,
+  isCurrentWeekBookingDate,
   now,
   startOfDate,
 } from '../utils/date.js';
@@ -164,6 +166,16 @@ function isUserVisibleBooking(booking) {
 
 function isVisibleAdminBooking(booking) {
   return Boolean(booking) && ADMIN_VISIBLE_BOOKING_STATUSES.includes(booking.status);
+}
+
+function normalizeUserCurrentWeekVisitDate(visitDate) {
+  const normalizedVisitDate = startOfDate(ensureFutureOrToday(visitDate, 'Дата визита'));
+
+  if (!isCurrentWeekBookingDate(normalizedVisitDate)) {
+    throw new ValidationError(BOT_TEXTS.BOOKING_CURRENT_WEEK_ONLY);
+  }
+
+  return normalizedVisitDate;
 }
 
 function filterVisibleAdminBookings(bookings) {
@@ -1174,6 +1186,10 @@ export function createBookingService({
     return getNextAvailableBookingDates(days);
   }
 
+  function getCurrentWeekVisitDates() {
+    return getCurrentWeekBookingDates();
+  }
+
   async function listBoutiquesWithSlots() {
     return getVisibleBoutiques();
   }
@@ -1231,7 +1247,7 @@ export function createBookingService({
             throw new ValidationError('Выбери бутик, день и время.');
           }
 
-          const normalizedVisitDate = startOfDate(ensureFutureOrToday(data.visitDate, 'Дата визита'));
+          const normalizedVisitDate = normalizeUserCurrentWeekVisitDate(data.visitDate);
           const boutique = await tx.boutique.findFirst({
             where: {
               id: data.boutiqueId,
@@ -1465,7 +1481,7 @@ export function createBookingService({
       throw new ValidationError('Выбери новый день и время.');
     }
 
-    const normalizedVisitDate = startOfDate(ensureFutureOrToday(visitDate, 'Дата визита'));
+    const normalizedVisitDate = normalizeUserCurrentWeekVisitDate(visitDate);
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -1700,6 +1716,7 @@ export function createBookingService({
     getVisibleAdminBookingById,
     getAvailableSlotsByDate,
     getAvailableVisitDates,
+    getCurrentWeekVisitDates,
     getBoutiques,
     getVisibleAdminBookings,
     getVisibleAdminBookingsCreatedBetween,
