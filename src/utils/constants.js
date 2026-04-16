@@ -19,10 +19,10 @@ export const MAIN_MENU_LAYOUT = [
 ];
 
 export const BOT_TEXTS = Object.freeze({
-  BOOKING_CURRENT_WEEK_ONLY:
-    'Сейчас можно выбрать только оставшиеся рабочие дни текущей недели.',
-  BOOKING_CURRENT_WEEK_UNAVAILABLE:
-    'Запись на этой неделе уже недоступна. Попробуйте позже.',
+  BOOKING_DATE_OUTSIDE_WINDOW:
+    'Эта дата сейчас недоступна для записи.',
+  BOOKING_NO_AVAILABLE_DAYS:
+    'Свободных дней для записи сейчас нет.',
   START_NEW_USER:
     'Привет! 👋\nЭто бот Cerca Trova.\n\nСначала нужно заполнить регистрацию.\nНажми «Регистрация».',
   START_REGISTERED:

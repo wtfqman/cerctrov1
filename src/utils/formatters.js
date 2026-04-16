@@ -505,8 +505,17 @@ export function hasAdminBookingUserPdf(booking) {
   return typeof telegramFileId === 'string' && telegramFileId.trim() !== '';
 }
 
+function getAdminBookingSelectorActor(booking) {
+  const registrationFullName =
+    typeof booking?.user?.registration?.fullName === 'string'
+      ? booking.user.registration.fullName.trim()
+      : '';
+
+  return registrationFullName || getPreferredTelegramUsername(booking?.user) || 'Пользователь';
+}
+
 export function formatAdminBookingSelectorLabel(booking, index = null) {
-  const actor = getPreferredTelegramUsername(booking?.user) ?? getAdminBookingFullName(booking);
+  const actor = getAdminBookingSelectorActor(booking);
   const parts = [actor];
 
   if (booking?.visitDate) {

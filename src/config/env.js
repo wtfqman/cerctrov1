@@ -187,6 +187,10 @@ const mailHasAnyConfig = [
   mailFrom,
 ].some(Boolean);
 const mailEnabled = mailMissingVars.length === 0;
+const defaultReminderDay = getNumberEnv('DEFAULT_REMINDER_DAY', getNumberEnv('RETURN_REMINDER_DAYS', 5));
+const defaultAdminAlertDay = getNumberEnv('DEFAULT_ADMIN_ALERT_DAY', getNumberEnv('RETURN_ADMIN_ALERT_DAYS', 8));
+const menDeliveryReminderDay = getNumberEnv('MEN_DELIVERY_REMINDER_DAY', 10);
+const menDeliveryAdminAlertDay = getNumberEnv('MEN_DELIVERY_ADMIN_ALERT_DAY', 14);
 
 export const env = Object.freeze({
   NODE_ENV: process.env.NODE_ENV ?? 'development',
@@ -219,8 +223,12 @@ export const env = Object.freeze({
   APP_URL: getEnvValue('APP_URL'),
   PDF_STORAGE_MODE: pdfStorageMode,
   PDF_STORAGE_DIR: getEnvValue('PDF_STORAGE_DIR') || 'storage/pdfs',
-  RETURN_REMINDER_DAYS: getNumberEnv('RETURN_REMINDER_DAYS', 5),
-  RETURN_ADMIN_ALERT_DAYS: getNumberEnv('RETURN_ADMIN_ALERT_DAYS', 8),
+  DEFAULT_REMINDER_DAY: defaultReminderDay,
+  DEFAULT_ADMIN_ALERT_DAY: defaultAdminAlertDay,
+  RETURN_REMINDER_DAYS: defaultReminderDay,
+  RETURN_ADMIN_ALERT_DAYS: defaultAdminAlertDay,
+  MEN_DELIVERY_REMINDER_DAY: menDeliveryReminderDay,
+  MEN_DELIVERY_ADMIN_ALERT_DAY: menDeliveryAdminAlertDay,
   OVERDUE_CHECK_INTERVAL_MS: getNumberEnv('OVERDUE_CHECK_INTERVAL_MS', 10 * 60 * 1000),
   DEFAULT_ADMIN_ROLE: defaultAdminRole,
   SUPPORT_CONTACT: supportContact,

@@ -3,6 +3,7 @@ import { BookingRequestType, BookingStatus, Prisma, TimerStatus, VisitMode } fro
 import { BOT_TEXTS } from '../utils/constants.js';
 import { addDays, dayjs, formatDate } from '../utils/date.js';
 import { formatAdminUserIdentityLines } from '../utils/formatters.js';
+import { parseRegistrationSizes } from '../utils/registration.js';
 
 const OPEN_TIMER_STATUSES = [TimerStatus.ACTIVE, TimerStatus.OVERDUE];
 const ACTIVE_BOOKING_STATUSES = [BookingStatus.CREATED, BookingStatus.SUBMITTED];
@@ -44,6 +45,40 @@ function resolveReminderVisitMode(timer) {
   }
 
   return null;
+}
+
+function hasMenRegistrationSizes(registration) {
+  const sizes = typeof registration?.sizes === 'string' ? registration.sizes.trim() : '';
+
+  if (!sizes) {
+    return false;
+  }
+
+  return parseRegistrationSizes(sizes).hasStructuredData;
+}
+
+function isMenDeliveryBooking(booking) {
+  return booking?.visitMode === VisitMode.DELIVERY && hasMenRegistrationSizes(booking?.user?.registration);
+}
+
+function getDefaultTimerPolicy(envConfig) {
+  return {
+    adminAlertDays: envConfig.RETURN_ADMIN_ALERT_DAYS,
+    reminderDays: envConfig.RETURN_REMINDER_DAYS,
+  };
+}
+
+function getTimerPolicyForBooking(booking, envConfig) {
+  const defaultPolicy = getDefaultTimerPolicy(envConfig);
+
+  if (isMenDeliveryBooking(booking)) {
+    return {
+      adminAlertDays: envConfig.MEN_DELIVERY_ADMIN_ALERT_DAY ?? defaultPolicy.adminAlertDays,
+      reminderDays: envConfig.MEN_DELIVERY_REMINDER_DAY ?? defaultPolicy.reminderDays,
+    };
+  }
+
+  return defaultPolicy;
 }
 
 export function createTimerService({ prisma, logger, env, googleSheets }) {
@@ -124,6 +159,7 @@ export function createTimerService({ prisma, logger, env, googleSheets }) {
   }
 
   async function listOverdueTimers(limit = 20) {
+    const now = new Date();
     const thresholdDate = dayjs().subtract(env.RETURN_ADMIN_ALERT_DAYS, 'day').toDate();
 
     return prisma.userItemTimer.findMany({
@@ -132,9 +168,19 @@ export function createTimerService({ prisma, logger, env, googleSheets }) {
           in: OPEN_TIMER_STATUSES,
         },
         returnedAt: null,
-        takenAt: {
-          lte: thresholdDate,
-        },
+        OR: [
+          {
+            adminAlertAt: {
+              lte: now,
+            },
+          },
+          {
+            adminAlertAt: null,
+            takenAt: {
+              lte: thresholdDate,
+            },
+          },
+        ],
       },
       include: {
         booking: {
@@ -156,8 +202,9 @@ export function createTimerService({ prisma, logger, env, googleSheets }) {
     });
   }
 
-  async function startUserItemTimer({ userId, bookingId = null, note = null }) {
+  async function startUserItemTimer({ userId, bookingId = null, note = null, timerPolicy = null }) {
     const takenAt = new Date();
+    const resolvedTimerPolicy = timerPolicy ?? getDefaultTimerPolicy(env);
 
     try {
       const timer = await prisma.$transaction(async (tx) => {
@@ -182,9 +229,9 @@ export function createTimerService({ prisma, logger, env, googleSheets }) {
             note,
             status: TimerStatus.ACTIVE,
             takenAt,
-            dueAt: addDays(takenAt, env.RETURN_ADMIN_ALERT_DAYS),
-            reminderAt: addDays(takenAt, env.RETURN_REMINDER_DAYS),
-            adminAlertAt: addDays(takenAt, env.RETURN_ADMIN_ALERT_DAYS),
+            dueAt: addDays(takenAt, resolvedTimerPolicy.adminAlertDays),
+            reminderAt: addDays(takenAt, resolvedTimerPolicy.reminderDays),
+            adminAlertAt: addDays(takenAt, resolvedTimerPolicy.adminAlertDays),
           },
           include: {
             booking: {
@@ -243,6 +290,13 @@ export function createTimerService({ prisma, logger, env, googleSheets }) {
       orderBy: {
         createdAt: 'desc',
       },
+      include: {
+        user: {
+          include: {
+            registration: true,
+          },
+        },
+      },
     });
 
     if (!latestBooking) {
@@ -258,6 +312,7 @@ export function createTimerService({ prisma, logger, env, googleSheets }) {
     const timer = await startUserItemTimer({
       userId,
       bookingId: latestBooking?.id ?? null,
+      timerPolicy: getTimerPolicyForBooking(latestBooking, env),
     });
 
     if (!timer) {

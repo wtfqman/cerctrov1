@@ -86,6 +86,17 @@ function buildDateStepText(booking, notice = '') {
     .join('\n');
 }
 
+function buildNoDatesText(booking, notice = '') {
+  return [
+    notice,
+    buildBookingReferenceText(booking),
+    '',
+    BOT_TEXTS.BOOKING_NO_AVAILABLE_DAYS,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 function buildSlotStepText(booking, visitDate, notice = '') {
   return [
     notice,
@@ -150,21 +161,22 @@ async function leaveToMainMenu(ctx, message) {
 
 async function promptDateStep(ctx, notice = '') {
   const state = getSceneState(ctx);
-  state.dateOptions = ctx.state.services.bookingService.getCurrentWeekVisitDates().map((value) => ({
+  const availableDates = await ctx.state.services.bookingService.getAvailableVisitDatesForBoutique(
+    state.booking.boutiqueId,
+  );
+
+  state.dateOptions = availableDates.map((value) => ({
     code: formatDate(value, 'YYYY-MM-DD'),
     kind: USER_UI_OPTION_KINDS.DATE,
     label: formatDate(value, 'DD.MM dd'),
     value,
   }));
 
-  if (state.dateOptions.length === 0) {
-    await leaveBackToCurrentCard(ctx, notice || BOT_TEXTS.BOOKING_CURRENT_WEEK_UNAVAILABLE);
-    return false;
-  }
-
   await renderSceneMessage(
     ctx,
-    buildDateStepText(state.booking, notice),
+    state.dateOptions.length === 0
+      ? buildNoDatesText(state.booking, notice)
+      : buildDateStepText(state.booking, notice),
     getBookingRescheduleDateKeyboard(state.dateOptions),
   );
 

@@ -6,9 +6,9 @@ import {
   dayjs,
   DEFAULT_BOOKING_WORKING_DAYS_WINDOW,
   formatDate,
-  getCurrentWeekBookingDates,
+  getUserBookingDates,
   getNextAvailableBookingDates,
-  isCurrentWeekBookingDate,
+  isUserBookingDate,
   now,
   startOfDate,
 } from '../utils/date.js';
@@ -168,11 +168,11 @@ function isVisibleAdminBooking(booking) {
   return Boolean(booking) && ADMIN_VISIBLE_BOOKING_STATUSES.includes(booking.status);
 }
 
-function normalizeUserCurrentWeekVisitDate(visitDate) {
+function normalizeUserBookingVisitDate(visitDate) {
   const normalizedVisitDate = startOfDate(ensureFutureOrToday(visitDate, 'Дата визита'));
 
-  if (!isCurrentWeekBookingDate(normalizedVisitDate)) {
-    throw new ValidationError(BOT_TEXTS.BOOKING_CURRENT_WEEK_ONLY);
+  if (!isUserBookingDate(normalizedVisitDate)) {
+    throw new ValidationError(BOT_TEXTS.BOOKING_DATE_OUTSIDE_WINDOW);
   }
 
   return normalizedVisitDate;
@@ -1186,8 +1186,23 @@ export function createBookingService({
     return getNextAvailableBookingDates(days);
   }
 
-  function getCurrentWeekVisitDates() {
-    return getCurrentWeekBookingDates();
+  function getBookingFlowVisitDates() {
+    return getUserBookingDates();
+  }
+
+  async function getAvailableVisitDatesForBoutique(boutiqueId) {
+    const candidateDates = getBookingFlowVisitDates();
+    const availableDates = [];
+
+    for (const visitDate of candidateDates) {
+      const slots = await getAvailableSlotsByDate(boutiqueId, visitDate);
+
+      if (slots.some((slotEntry) => slotEntry.isAvailable)) {
+        availableDates.push(visitDate);
+      }
+    }
+
+    return availableDates;
   }
 
   async function listBoutiquesWithSlots() {
@@ -1247,7 +1262,7 @@ export function createBookingService({
             throw new ValidationError('Выбери бутик, день и время.');
           }
 
-          const normalizedVisitDate = normalizeUserCurrentWeekVisitDate(data.visitDate);
+          const normalizedVisitDate = normalizeUserBookingVisitDate(data.visitDate);
           const boutique = await tx.boutique.findFirst({
             where: {
               id: data.boutiqueId,
@@ -1481,7 +1496,7 @@ export function createBookingService({
       throw new ValidationError('Выбери новый день и время.');
     }
 
-    const normalizedVisitDate = normalizeUserCurrentWeekVisitDate(visitDate);
+    const normalizedVisitDate = normalizeUserBookingVisitDate(visitDate);
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -1716,7 +1731,8 @@ export function createBookingService({
     getVisibleAdminBookingById,
     getAvailableSlotsByDate,
     getAvailableVisitDates,
-    getCurrentWeekVisitDates,
+    getAvailableVisitDatesForBoutique,
+    getBookingFlowVisitDates,
     getBoutiques,
     getVisibleAdminBookings,
     getVisibleAdminBookingsCreatedBetween,

@@ -30,6 +30,31 @@ function getBookingWeekStartDay(value) {
   return normalizedDate.subtract(daysFromMonday, 'day').startOf('day');
 }
 
+function getUserBookingDateRange(fromValue = null) {
+  const referenceDate = (fromValue ? dayjs(fromValue) : now()).tz(env.DEFAULT_TIMEZONE).startOf('day');
+
+  if (!referenceDate.isValid()) {
+    return null;
+  }
+
+  const currentWeekStart = getBookingWeekStartDay(referenceDate);
+  const weekday = referenceDate.day();
+
+  if (weekday === 0 || weekday === 6) {
+    const nextWeekStart = currentWeekStart.add(7, 'day');
+
+    return {
+      end: nextWeekStart.add(4, 'day'),
+      start: nextWeekStart,
+    };
+  }
+
+  return {
+    end: currentWeekStart.add(4, 'day'),
+    start: referenceDate,
+  };
+}
+
 export function now() {
   return dayjs().tz(env.DEFAULT_TIMEZONE);
 }
@@ -61,41 +86,32 @@ export function isBookingWorkingDay(value) {
   return !BOOKING_NON_WORKING_WEEKDAYS.has(normalizedDate.day()) && !isBookingExcludedDate(normalizedDate);
 }
 
-export function isCurrentWeekBookingDate(value, fromValue = null) {
+export function isUserBookingDate(value, fromValue = null) {
   const normalizedDate = dayjs(value).tz(env.DEFAULT_TIMEZONE).startOf('day');
-  const referenceDate = (fromValue ? dayjs(fromValue) : now()).tz(env.DEFAULT_TIMEZONE).startOf('day');
+  const allowedRange = getUserBookingDateRange(fromValue);
 
-  if (!normalizedDate.isValid() || !referenceDate.isValid()) {
-    return false;
-  }
-
-  const currentWeekStart = getBookingWeekStartDay(referenceDate);
-  const dateWeekStart = getBookingWeekStartDay(normalizedDate);
-
-  if (!currentWeekStart || !dateWeekStart) {
+  if (!normalizedDate.isValid() || !allowedRange) {
     return false;
   }
 
   return (
-    !normalizedDate.isBefore(referenceDate, 'day') &&
-    dateWeekStart.isSame(currentWeekStart, 'day') &&
+    !normalizedDate.isBefore(allowedRange.start, 'day') &&
+    !normalizedDate.isAfter(allowedRange.end, 'day') &&
     isBookingWorkingDay(normalizedDate)
   );
 }
 
-export function getCurrentWeekBookingDates(fromValue = null) {
-  const referenceDate = (fromValue ? dayjs(fromValue) : now()).tz(env.DEFAULT_TIMEZONE).startOf('day');
+export function getUserBookingDates(fromValue = null) {
+  const allowedRange = getUserBookingDateRange(fromValue);
 
-  if (!referenceDate.isValid()) {
+  if (!allowedRange) {
     return [];
   }
 
-  const currentWeekStart = getBookingWeekStartDay(referenceDate);
-  const currentWeekEnd = currentWeekStart.add(6, 'day');
   const dates = [];
-  let cursor = referenceDate;
+  let cursor = allowedRange.start;
 
-  while (!cursor.isAfter(currentWeekEnd, 'day')) {
+  while (!cursor.isAfter(allowedRange.end, 'day')) {
     if (isBookingWorkingDay(cursor)) {
       dates.push(cursor.toDate());
     }
