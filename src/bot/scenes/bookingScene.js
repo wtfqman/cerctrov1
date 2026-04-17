@@ -4,7 +4,7 @@ import { Scenes } from 'telegraf';
 import { BOT_TEXTS } from '../../utils/constants.js';
 import { getUserVisibleBoutiqueLabel } from '../../utils/boutiques.js';
 import { formatDate } from '../../utils/date.js';
-import { AppError } from '../../utils/errors.js';
+import { AppError, ValidationError } from '../../utils/errors.js';
 import { formatSlotLabelForUser } from '../../utils/slots.js';
 import {
   BOOKING_CALLBACKS,
@@ -26,6 +26,7 @@ import {
   isUnavailableMessageError,
   normalizeInlineMarkup,
 } from '../utils/inlineKeyboard.js';
+import { markSceneExitReason, SCENE_EXIT_REASONS } from '../utils/sceneNavigation.js';
 
 export const BOOKING_SCENE_ID = 'booking-scene';
 
@@ -43,6 +44,97 @@ const VISIT_MODE_BY_CALLBACK = Object.freeze({
 function getSceneState(ctx) {
   ctx.wizard.state.bookingDraft ??= {};
   return ctx.wizard.state.bookingDraft;
+}
+
+function getRequestLogger(ctx) {
+  return ctx.state?.requestLogger ?? null;
+}
+
+function logBookingFlowEvent(ctx, event, extra = {}, level = 'info') {
+  getRequestLogger(ctx)?.[level]?.(
+    {
+      event,
+      sceneId: BOOKING_SCENE_ID,
+      ...extra,
+    },
+    `Booking flow event: ${event}`,
+  );
+}
+
+function resetBookingState(ctx, nextState = {}, reason = 'unspecified') {
+  const previousState = getSceneState(ctx);
+
+  ctx.wizard.state.bookingDraft = { ...nextState };
+
+  logBookingFlowEvent(ctx, 'booking_flow_reset', {
+    hadBoutique: Boolean(previousState.boutique?.id),
+    hadSelectedSlot: Boolean(previousState.selectedSlot?.id),
+    hadVisitDate: Boolean(previousState.visitDate),
+    reason,
+  });
+
+  return getSceneState(ctx);
+}
+
+function clearStateFields(state, fields) {
+  for (const field of fields) {
+    delete state[field];
+  }
+}
+
+function clearAfterRequestType(state) {
+  clearStateFields(state, [
+    'wishText',
+    'visitMode',
+    'boutique',
+    'boutiqueOptions',
+    'dateOptions',
+    'visitDate',
+    'slotOptions',
+    'selectedSlot',
+    'deliveryAddress',
+  ]);
+}
+
+function clearAfterWish(state) {
+  clearStateFields(state, [
+    'visitMode',
+    'boutique',
+    'boutiqueOptions',
+    'dateOptions',
+    'visitDate',
+    'slotOptions',
+    'selectedSlot',
+    'deliveryAddress',
+  ]);
+}
+
+function clearAfterVisitMode(state) {
+  clearStateFields(state, [
+    'boutique',
+    'boutiqueOptions',
+    'dateOptions',
+    'visitDate',
+    'slotOptions',
+    'selectedSlot',
+    'deliveryAddress',
+  ]);
+}
+
+function clearAfterBoutique(state) {
+  clearStateFields(state, [
+    'dateOptions',
+    'visitDate',
+    'slotOptions',
+    'selectedSlot',
+  ]);
+}
+
+function clearAfterDate(state) {
+  clearStateFields(state, [
+    'slotOptions',
+    'selectedSlot',
+  ]);
 }
 
 function getMessageText(ctx) {
@@ -222,14 +314,22 @@ function buildBlockedMessage(user, supportContact) {
   return lines.join('\n');
 }
 
-async function leaveWithMainMenu(ctx, message) {
-  await clearBookingPanelKeyboard(ctx);
+async function leaveWithMainMenu(ctx, message, resetReason = 'leave_with_main_menu') {
+  try {
+    await clearBookingPanelKeyboard(ctx);
+  } catch (error) {
+    logBookingFlowEvent(ctx, 'booking_flow_panel_clear_failed', { err: error }, 'warn');
+  }
+
   await ctx.reply(message, getMainMenuKeyboard());
+  resetBookingState(ctx, {}, resetReason);
   await ctx.scene.leave();
 }
 
 async function cancelFlow(ctx) {
-  await leaveWithMainMenu(ctx, 'Заявку можно оформить позже.');
+  logBookingFlowEvent(ctx, 'booking_cancelled');
+  markSceneExitReason(ctx, SCENE_EXIT_REASONS.CANCEL);
+  await leaveWithMainMenu(ctx, 'Заявку можно оформить позже.', 'cancel');
 }
 
 function getRequestTypeLabel(requestType) {
@@ -378,7 +478,42 @@ async function promptDateStep(ctx, notice = '') {
 
 async function promptSlotStep(ctx, notice = '') {
   const state = getSceneState(ctx);
-  const slots = await ctx.state.services.bookingService.getAvailableSlotsByDate(state.boutique.id, state.visitDate);
+  if (!state.boutique?.id) {
+    await promptBoutiqueStep(ctx, notice || 'Выбери бутик ниже.');
+    ctx.wizard.selectStep(4);
+    return false;
+  }
+
+  if (!state.visitDate) {
+    logBookingFlowEvent(ctx, 'booking_date_validation_skipped_no_date', {
+      boutiqueId: state.boutique.id,
+    });
+    clearAfterBoutique(state);
+    await promptDateStep(ctx, notice || 'Выбери день ниже.');
+    ctx.wizard.selectStep(5);
+    return false;
+  }
+
+  let slots;
+
+  try {
+    slots = await ctx.state.services.bookingService.getAvailableSlotsByDate(state.boutique.id, state.visitDate);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      logBookingFlowEvent(ctx, 'booking_date_validation_skipped_no_date', {
+        boutiqueId: state.boutique.id,
+        errorMessage: error.message,
+        reason: 'invalid_or_stale_date',
+      }, 'warn');
+      clearAfterBoutique(state);
+      await promptDateStep(ctx, notice || 'Выбери день ниже.');
+      ctx.wizard.selectStep(5);
+      return false;
+    }
+
+    throw error;
+  }
+
   const availableSlots = slots.filter((item) => item.isAvailable);
 
   if (availableSlots.length === 0) {
@@ -435,9 +570,12 @@ export function createBookingScene() {
         return undefined;
       }
 
-      ctx.wizard.state.bookingDraft = {
+      resetBookingState(ctx, {
         userId: user.id,
-      };
+      }, 'flow_start');
+      logBookingFlowEvent(ctx, 'booking_flow_started', {
+        userId: user.id,
+      });
 
       await promptRequestTypeStep(ctx);
       return ctx.wizard.next();
@@ -462,6 +600,7 @@ export function createBookingScene() {
       }
 
       const state = getSceneState(ctx);
+      clearAfterRequestType(state);
       state.requestType = requestType;
 
       await answerBookingCallback(ctx);
@@ -481,6 +620,7 @@ export function createBookingScene() {
 
       if (isBackAction(ctx)) {
         await answerBookingCallback(ctx);
+        clearAfterRequestType(getSceneState(ctx));
         await promptRequestTypeStep(ctx);
         ctx.wizard.selectStep(1);
         return undefined;
@@ -490,7 +630,9 @@ export function createBookingScene() {
 
       if (callbackData === BOOKING_CALLBACKS.SKIP_WISH) {
         await answerBookingCallback(ctx);
-        getSceneState(ctx).wishText = null;
+        const state = getSceneState(ctx);
+        clearAfterWish(state);
+        state.wishText = null;
         await promptVisitModeStep(ctx);
         return ctx.wizard.next();
       }
@@ -503,7 +645,9 @@ export function createBookingScene() {
         return undefined;
       }
 
-      getSceneState(ctx).wishText = wishText;
+      const state = getSceneState(ctx);
+      clearAfterWish(state);
+      state.wishText = wishText;
       await promptVisitModeStep(ctx);
       return ctx.wizard.next();
     },
@@ -520,6 +664,7 @@ export function createBookingScene() {
 
       if (isBackAction(ctx)) {
         await answerBookingCallback(ctx);
+        clearAfterWish(getSceneState(ctx));
         await promptWishStep(ctx);
         ctx.wizard.selectStep(2);
         return undefined;
@@ -534,6 +679,7 @@ export function createBookingScene() {
       }
 
       const state = getSceneState(ctx);
+      clearAfterVisitMode(state);
       state.visitMode = visitMode;
 
       await answerBookingCallback(ctx);
@@ -565,6 +711,7 @@ export function createBookingScene() {
 
       if (isBackAction(ctx)) {
         await answerBookingCallback(ctx);
+        clearAfterVisitMode(getSceneState(ctx));
         await promptVisitModeStep(ctx);
         ctx.wizard.selectStep(3);
         return undefined;
@@ -581,6 +728,10 @@ export function createBookingScene() {
       }
 
       state.boutique = selected.boutique;
+      clearAfterBoutique(state);
+      logBookingFlowEvent(ctx, 'booking_boutique_selected', {
+        boutiqueId: state.boutique.id,
+      });
 
       await answerBookingCallback(ctx);
       const prompted = await promptDateStep(ctx);
@@ -604,6 +755,7 @@ export function createBookingScene() {
 
       if (isBackAction(ctx)) {
         await answerBookingCallback(ctx);
+        clearAfterBoutique(getSceneState(ctx));
         const prompted = await promptBoutiqueStep(ctx);
 
         if (prompted) {
@@ -624,6 +776,7 @@ export function createBookingScene() {
       }
 
       state.visitDate = selectedDate.value;
+      clearAfterDate(state);
 
       await answerBookingCallback(ctx);
       const prompted = await promptSlotStep(ctx);
@@ -647,6 +800,7 @@ export function createBookingScene() {
 
       if (isBackAction(ctx)) {
         await answerBookingCallback(ctx);
+        clearAfterDate(getSceneState(ctx));
         const prompted = await promptDateStep(ctx);
 
         if (prompted) {
@@ -690,6 +844,7 @@ export function createBookingScene() {
 
       if (isBackAction(ctx)) {
         await answerBookingCallback(ctx);
+        clearAfterDate(getSceneState(ctx));
         const prompted = await promptSlotStep(ctx);
 
         if (prompted) {
@@ -751,6 +906,7 @@ export function createBookingScene() {
 
       if (isBackAction(ctx)) {
         await answerBookingCallback(ctx);
+        clearAfterVisitMode(getSceneState(ctx));
         await promptVisitModeStep(ctx);
         ctx.wizard.selectStep(3);
         return undefined;

@@ -1,4 +1,4 @@
-import { dayjs, now } from './date.js';
+import { dayjs, now, startOfDate } from './date.js';
 import { ValidationError } from './errors.js';
 
 export function normalizeTelegramId(value) {
@@ -30,7 +30,7 @@ export function ensureFutureOrToday(value, fieldName = 'Дата') {
     throw new ValidationError(`${fieldName} заполнена некорректно`);
   }
 
-  if (parsed.startOf('day').isBefore(now().startOf('day'))) {
+  if (startOfDate(value).getTime() < startOfDate(now()).getTime()) {
     throw new ValidationError(`${fieldName} не может быть в прошлом`);
   }
 

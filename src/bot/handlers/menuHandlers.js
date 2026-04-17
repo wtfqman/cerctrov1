@@ -398,6 +398,24 @@ export function registerMenuHandlers(bot, { env, services }) {
     await ctx.reply(BOT_TEXTS.HELP_PROMPT, getHelpKeyboard());
   });
 
+  bot.action(BOOKING_CALLBACKS.CANCEL, async (ctx) => {
+    ctx.state?.requestLogger?.info(
+      {
+        event: 'booking_cancelled',
+        sceneId: ctx.scene?.current?.id ?? null,
+        staleCallback: true,
+      },
+      'Booking flow event: booking_cancelled',
+    );
+
+    if (!ctx.scene?.current || ctx.scene.current.id === BOOKING_SCENE_ID) {
+      ctx.scene?.reset?.();
+    }
+    await answerBookingCallback(ctx);
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => undefined);
+    await ctx.reply('Заявку можно оформить позже.', getMainMenuKeyboard());
+  });
+
   bot.action(/^booking:user:cancel:(?!confirm:|back:)(.+)$/, async (ctx) => {
     await withBookingAction(ctx, async (user) => {
       const bookingId = extractCallbackValue(ctx, BOOKING_CALLBACKS.USER_CANCEL_PREFIX);
