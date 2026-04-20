@@ -6,6 +6,7 @@ import {
 } from '../utils/constants.js';
 import { formatDate } from '../utils/date.js';
 import { formatAdminUserIdentityLines, formatUserDisplayName } from '../utils/formatters.js';
+import { parseRegistrationSizes, REGISTRATION_SIZE_FIELDS } from '../utils/registration.js';
 import { formatSlotLabelForUser } from '../utils/slots.js';
 
 function buildCreatorPhone(booking) {
@@ -33,6 +34,28 @@ function buildBookingWishText(booking) {
   return wishText || null;
 }
 
+function buildRegistrationSizesText(booking) {
+  const parsedSizes = parseRegistrationSizes(booking?.user?.registration?.sizes);
+
+  if (!parsedSizes.rawText) {
+    return null;
+  }
+
+  if (!parsedSizes.hasStructuredData) {
+    return ['Размеры:', parsedSizes.rawText].join('\n');
+  }
+
+  const lines = REGISTRATION_SIZE_FIELDS.map((field) => {
+    const value = typeof parsedSizes.fields[field.key] === 'string'
+      ? parsedSizes.fields[field.key].trim()
+      : '';
+
+    return value ? `${field.label}: ${value}` : null;
+  }).filter(Boolean);
+
+  return lines.length > 0 ? ['Размеры:', ...lines].join('\n') : null;
+}
+
 function buildUserPdfStatusLine(hasUserPdf) {
   return `PDF: ${hasUserPdf ? 'загружен' : 'не загружен'}`;
 }
@@ -44,11 +67,13 @@ function buildBookingNotificationText(booking, { hasUserPdf }) {
   const bookingDate = buildBookingDate(booking);
   const bookingTime = buildBookingTime(booking);
   const wishText = buildBookingWishText(booking);
+  const registrationSizes = buildRegistrationSizesText(booking);
   const lines = [
     'Новая заявка',
     '',
     ...formatAdminUserIdentityLines(booking?.user, { label: 'Креатор' }),
     creatorPhone ? `Телефон: ${creatorPhone}` : null,
+    registrationSizes || null,
     `Тип: ${requestTypeLabel}`,
     `Формат: ${visitModeLabel}`,
     `Бутик / адрес: ${buildBookingLocation(booking)}`,
