@@ -8,9 +8,11 @@ import {
 import { getUserVisibleBoutiqueLabel } from './boutiques.js';
 import { formatDate } from './date.js';
 import {
+  REGISTRATION_SIZE_FIELDS,
   formatRegistrationSizes,
   getRegistrationCdekAddress,
   getRegistrationHomeAddress,
+  parseRegistrationSizes,
 } from './registration.js';
 import { formatSlotLabelForUser } from './slots.js';
 
@@ -486,6 +488,29 @@ function getAdminBookingLocationLine(booking) {
   return `Адрес: ${booking?.deliveryAddress ?? 'не указан'}`;
 }
 
+function getAdminBookingSizesBlock(booking) {
+  const parsedSizes = parseRegistrationSizes(booking?.user?.registration?.sizes);
+
+  if (!parsedSizes.hasStructuredData) {
+    return null;
+  }
+
+  const lines = REGISTRATION_SIZE_FIELDS.map((field) => {
+    const value = typeof parsedSizes.fields[field.key] === 'string'
+      ? parsedSizes.fields[field.key].trim()
+      : '';
+
+    return value ? `${field.label}: ${value}` : null;
+  }).filter(Boolean);
+
+  return lines.length > 0 ? ['\u0420\u0430\u0437\u043c\u0435\u0440\u044b:', ...lines].join('\n') : null;
+}
+
+function getAdminBookingWishBlock(booking) {
+  const wishText = typeof booking?.wishText === 'string' ? booking.wishText.trim() : '';
+  return wishText ? ['\u041f\u043e\u0436\u0435\u043b\u0430\u043d\u0438\u044f:', wishText].join('\n') : null;
+}
+
 function truncateText(value, maxLength = 48) {
   if (typeof value !== 'string') {
     return '';
@@ -609,6 +634,8 @@ export function formatAdminBookingDetailCard(booking, { title = 'Заявка' }
   const requestTypeLabel = BOOKING_REQUEST_TYPE_LABELS[booking.requestType] ?? booking.requestType;
   const visitModeLabel = VISIT_MODE_LABELS[booking.visitMode] ?? booking.visitMode;
   const username = getPreferredTelegramUsername(booking?.user);
+  const sizesBlock = getAdminBookingSizesBlock(booking);
+  const wishBlock = getAdminBookingWishBlock(booking);
   const lines = [
     title,
     '',
@@ -622,6 +649,14 @@ export function formatAdminBookingDetailCard(booking, { title = 'Заявка' }
     getAdminBookingTimeLine(booking),
     `PDF: ${hasAdminBookingUserPdf(booking) ? 'да' : 'нет'}`,
   ].filter(Boolean);
+
+  if (sizesBlock) {
+    lines.push(sizesBlock);
+  }
+
+  if (wishBlock) {
+    lines.push(wishBlock);
+  }
 
   return lines.join('\n');
 }

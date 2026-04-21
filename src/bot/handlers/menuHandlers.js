@@ -1,4 +1,5 @@
 import { BookingStatus, VisitMode } from '@prisma/client';
+import { Markup } from 'telegraf';
 
 import { BOT_TEXTS, MENU_BUTTONS } from '../../utils/constants.js';
 import { dayjs, formatDate } from '../../utils/date.js';
@@ -25,6 +26,8 @@ import { REGISTRATION_SCENE_ID } from '../scenes/registrationScene.js';
 import { isMessageNotModifiedError, normalizeInlineMarkup } from '../utils/inlineKeyboard.js';
 
 const ACTIVE_BOOKING_STATUSES = [BookingStatus.CREATED, BookingStatus.SUBMITTED];
+const BOOKING_START_OVER_CALLBACK = 'menu:booking:start_over';
+const BOOKING_SESSION_EXPIRED_TEXT = 'Сессия устарела. Начните заново';
 
 function buildBlockedMessage(user, supportContact) {
   const lines = [BOT_TEXTS.BLOCKED];
@@ -40,6 +43,12 @@ function buildBlockedMessage(user, supportContact) {
 
 function getCallbackData(ctx) {
   return ctx.callbackQuery?.data ?? '';
+}
+
+function getBookingStartOverKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('Начать заново', BOOKING_START_OVER_CALLBACK)],
+  ]);
 }
 
 function extractCallbackValue(ctx, prefix) {
@@ -354,6 +363,56 @@ export function registerMenuHandlers(bot, { env, services }) {
     }
   }
 
+  async function startBookingOver(ctx) {
+    await answerBookingCallback(ctx);
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => undefined);
+
+    const user = await ensureUserAccess(ctx);
+
+    if (!user) {
+      return;
+    }
+
+    await openBookingSection(ctx, user);
+  }
+
+  async function bookingCallbackFallbackHandler(ctx, next) {
+    if (ctx.scene?.current) {
+      return next();
+    }
+
+    try {
+      await answerBookingCallback(ctx, BOOKING_SESSION_EXPIRED_TEXT);
+      await renderInlineMessage(
+        ctx,
+        BOOKING_SESSION_EXPIRED_TEXT,
+        getBookingStartOverKeyboard(),
+      );
+    } catch (error) {
+      ctx.state?.requestLogger?.warn(
+        {
+          callbackData: getCallbackData(ctx),
+          err: error,
+        },
+        'Failed to render stale booking callback fallback',
+      );
+
+      try {
+        await ctx.reply(BOOKING_SESSION_EXPIRED_TEXT, getBookingStartOverKeyboard());
+      } catch (replyError) {
+        ctx.state?.requestLogger?.error(
+          {
+            callbackData: getCallbackData(ctx),
+            err: replyError,
+          },
+          'Failed to reply with stale booking callback fallback',
+        );
+      }
+    }
+
+    return undefined;
+  }
+
   bot.hears(MENU_BUTTONS.REGISTRATION, async (ctx) => {
     const user = await ensureUserAccess(ctx);
 
@@ -562,6 +621,10 @@ export function registerMenuHandlers(bot, { env, services }) {
     await renderInlineMessage(ctx, 'Сначала нужно загрузить PDF.');
     await ctx.reply(BOT_TEXTS.MENU_HINT, getMainMenuKeyboard());
   });
+
+  bot.action(BOOKING_START_OVER_CALLBACK, startBookingOver);
+  bot.action(/^booking:reschedule:/, bookingCallbackFallbackHandler);
+  bot.action(/^booking:/, bookingCallbackFallbackHandler);
 
   bot.hears(MENU_BUTTONS.RETURN_ITEMS, async (ctx) => {
     const user = await ensureUserAccess(ctx);

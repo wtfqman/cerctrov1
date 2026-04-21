@@ -1,4 +1,5 @@
 import { MENU_BUTTONS } from '../../utils/constants.js';
+import { getMainMenuKeyboard } from '../keyboards/mainMenu.js';
 
 export const SCENE_EXIT_REASONS = Object.freeze({
   SAVE: 'save',
@@ -9,6 +10,7 @@ export const SCENE_EXIT_REASONS = Object.freeze({
 });
 
 const SCENE_META_KEY = '__sceneNavigation';
+const SCENE_SESSION_RESET_MESSAGE = 'Сессия была сброшена';
 const GLOBAL_NAVIGATION_COMMANDS = new Set([
   '/admin',
   '/start',
@@ -34,6 +36,10 @@ function getMessageText(ctx) {
 
 function getRequestLogger(ctx) {
   return ctx.state?.requestLogger ?? null;
+}
+
+function ensureSession(ctx) {
+  ctx.session ??= {};
 }
 
 function getSceneSession(ctx) {
@@ -82,6 +88,42 @@ function hasSceneSessionData(ctx) {
   const hasState = Boolean(sceneSession.state && Object.keys(sceneSession.state).length > 0);
 
   return hasCurrent || hasExpiry || hasState;
+}
+
+function hasWizardStateData(ctx) {
+  const state = ctx.wizard?.state;
+
+  if (!state || typeof state !== 'object') {
+    return false;
+  }
+
+  return Object.keys(state).some((key) => key !== SCENE_META_KEY);
+}
+
+export function createSceneSessionGuard() {
+  return async (ctx, next) => {
+    ensureSession(ctx);
+
+    if (!ctx.wizard || ctx.wizard.cursor === 0 || hasWizardStateData(ctx)) {
+      return next();
+    }
+
+    getRequestLogger(ctx)?.warn(
+      {
+        cursor: ctx.wizard.cursor,
+        sceneId: getActiveSceneId(ctx),
+      },
+      'Scene wizard state is empty',
+    );
+
+    await leaveActiveScene(ctx, {
+      forceReset: true,
+      reason: SCENE_EXIT_REASONS.CANCEL,
+    });
+    await ctx.reply(SCENE_SESSION_RESET_MESSAGE, getMainMenuKeyboard());
+
+    return undefined;
+  };
 }
 
 function getGlobalNavigationIntent(ctx) {
@@ -149,6 +191,8 @@ export function markSceneExitReason(ctx, reason) {
 
 export function attachSceneLifecycleLogging(scene) {
   scene.enter(async (ctx, next) => {
+    ensureSession(ctx);
+
     getRequestLogger(ctx)?.info(
       {
         callbackData: ctx.callbackQuery?.data ?? null,
@@ -161,6 +205,8 @@ export function attachSceneLifecycleLogging(scene) {
 
     return next();
   });
+
+  scene.use(createSceneSessionGuard());
 
   scene.leave(async (ctx, next) => {
     getRequestLogger(ctx)?.info(

@@ -182,8 +182,9 @@ process.once('SIGTERM', () => {
   void shutdown('SIGTERM', 0);
 });
 
-process.on('unhandledRejection', (error) => {
-  logger.error({ err: error }, 'Unhandled promise rejection');
+process.on('unhandledRejection', (err) => {
+  console.error(err);
+  process.exit(1);
 });
 
 process.on('uncaughtException', (error) => {

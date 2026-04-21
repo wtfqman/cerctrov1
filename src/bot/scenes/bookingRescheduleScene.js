@@ -4,7 +4,7 @@ import { Scenes } from 'telegraf';
 import { BOT_TEXTS } from '../../utils/constants.js';
 import { getUserVisibleBoutiqueLabel } from '../../utils/boutiques.js';
 import { formatDate } from '../../utils/date.js';
-import { AppError } from '../../utils/errors.js';
+import { AppError, ValidationError } from '../../utils/errors.js';
 import { formatUserBookingCard } from '../../utils/formatters.js';
 import { formatSlotLabelForUser } from '../../utils/slots.js';
 import {
@@ -185,10 +185,23 @@ async function promptDateStep(ctx, notice = '') {
 
 async function promptSlotStep(ctx, notice = '') {
   const state = getSceneState(ctx);
-  const slots = await ctx.state.services.bookingService.getAvailableSlotsByDate(
-    state.booking.boutiqueId,
-    state.visitDate,
-  );
+  let slots;
+
+  try {
+    slots = await ctx.state.services.bookingService.getAvailableSlotsByDate(
+      state.booking.boutiqueId,
+      state.visitDate,
+    );
+  } catch (error) {
+    if (error instanceof ValidationError && error.message.includes('не может быть в прошлом')) {
+      await promptDateStep(ctx, 'Эта дата уже недоступна, выберите другую');
+      ctx.wizard.selectStep(1);
+      return false;
+    }
+
+    throw error;
+  }
+
   const availableSlots = slots.filter((item) => item.isAvailable);
 
   if (availableSlots.length === 0) {
