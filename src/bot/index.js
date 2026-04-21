@@ -20,6 +20,46 @@ import {
   createGlobalSceneNavigationGuard,
 } from './utils/sceneNavigation.js';
 
+const TELEGRAM_COMMANDS_SETUP_MAX_ATTEMPTS = 2;
+const TELEGRAM_COMMANDS_SETUP_RETRY_DELAY_MS = 1000;
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function setupTelegramCommandsSafely(bot, logger, commands) {
+  logger.info({ event: 'telegram_commands_setup_started' }, 'telegram_commands_setup_started');
+
+  for (let attempt = 1; attempt <= TELEGRAM_COMMANDS_SETUP_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await bot.telegram.setMyCommands(commands);
+      return;
+    } catch (error) {
+      logger.warn(
+        {
+          attempt,
+          err: error,
+          event: 'telegram_commands_setup_failed',
+          maxAttempts: TELEGRAM_COMMANDS_SETUP_MAX_ATTEMPTS,
+        },
+        'telegram_commands_setup_failed',
+      );
+
+      if (attempt < TELEGRAM_COMMANDS_SETUP_MAX_ATTEMPTS) {
+        await delay(TELEGRAM_COMMANDS_SETUP_RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  logger.warn(
+    { event: 'telegram_commands_setup_skipped_after_error' },
+    'telegram_commands_setup_skipped_after_error',
+  );
+  logger.info({ event: 'telegram_bot_launch_continues' }, 'telegram_bot_launch_continues');
+}
+
 export async function createBot({ env, logger, services }) {
   const bot = new Telegraf(env.BOT_TOKEN);
   const stage = new Scenes.Stage([
@@ -46,7 +86,7 @@ export async function createBot({ env, logger, services }) {
   registerAdminHandlers(bot, { env, services });
   registerMenuHandlers(bot, { env, services });
 
-  await bot.telegram.setMyCommands([
+  await setupTelegramCommandsSafely(bot, logger, [
     { command: 'start', description: 'Запустить бота' },
     { command: 'booking', description: 'Создать заявку' },
     { command: 'menu', description: 'Показать главное меню' },
