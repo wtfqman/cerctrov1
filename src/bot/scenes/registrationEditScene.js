@@ -67,7 +67,8 @@ function rememberPanel(ctx, target) {
 }
 
 function getStoredPanel(ctx) {
-  return getSceneState(ctx).panel ?? null;
+  const state = ctx.wizard?.state ?? ctx.scene?.state;
+  return state?.registrationEdit?.panel ?? null;
 }
 
 function getPanelTarget(ctx) {
@@ -598,7 +599,15 @@ export function createRegistrationEditScene() {
   );
 
   scene.leave(async (ctx, next) => {
-    await clearRegistrationPanelKeyboard(ctx);
+    try {
+      await clearRegistrationPanelKeyboard(ctx);
+    } catch (error) {
+      ctx.state?.requestLogger?.warn(
+        { err: error },
+        'Failed to clear registration edit panel keyboard on scene leave',
+      );
+    }
+
     return next();
   });
 
