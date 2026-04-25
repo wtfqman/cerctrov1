@@ -140,6 +140,7 @@ const adminIds = parseAdminIds(getRequiredEnv('ADMIN_IDS'));
 const defaultTimezone = getEnvValue(['DEFAULT_TIMEZONE', 'APP_TIMEZONE']) || 'Europe/Moscow';
 const pdfStorageMode = ensureSupportedPdfStorageMode(getEnvValue('PDF_STORAGE_MODE') || 'local');
 const supportContact = getEnvValue(['SUPPORT_CONTACT', 'BOT_USERNAME']) || '@Creator_CercaTrova_bot';
+const startInviteCode = getEnvValue('START_INVITE_CODE');
 const defaultAdminRole = ensureSupportedAdminRole(getEnvValue('DEFAULT_ADMIN_ROLE') || AdminRole.LIMITED);
 const googleSheetsSpreadsheetId = getEnvValue('GOOGLE_SHEETS_SPREADSHEET_ID');
 const googleServiceAccountJsonPath = resolveExistingOptionalFilePath('GOOGLE_SERVICE_ACCOUNT_JSON_PATH');
@@ -232,6 +233,7 @@ export const env = Object.freeze({
   OVERDUE_CHECK_INTERVAL_MS: getNumberEnv('OVERDUE_CHECK_INTERVAL_MS', 10 * 60 * 1000),
   DEFAULT_ADMIN_ROLE: defaultAdminRole,
   SUPPORT_CONTACT: supportContact,
+  START_INVITE_CODE: startInviteCode,
 });
 
 export function isGoogleSheetsConfigured() {

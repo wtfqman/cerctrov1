@@ -7,6 +7,49 @@ import { REGISTRATION_EDIT_SCENE_ID } from './scenes/registrationEditScene.js';
 import { REGISTRATION_SCENE_ID } from './scenes/registrationScene.js';
 import { resetSceneSession, SCENE_EXIT_REASONS } from './utils/sceneNavigation.js';
 
+const START_INVITE_ONLY_MESSAGE = 'Доступ к боту только по приглашению.';
+const START_INVITE_INVALID_MESSAGE = 'Ссылка недействительна. Обратитесь к администратору.';
+
+function getStartPayload(ctx) {
+  if (typeof ctx.startPayload === 'string') {
+    return ctx.startPayload.trim();
+  }
+
+  const text = ctx.message?.text ?? '';
+  const match = text.match(/^\/start(?:@\w+)?(?:\s+(.+))?$/);
+
+  return (match?.[1] ?? '').trim();
+}
+
+async function isAllowedByStartInvite(ctx, { env, services }) {
+  if (!env.START_INVITE_CODE) {
+    return true;
+  }
+
+  const payload = getStartPayload(ctx);
+
+  if (payload === env.START_INVITE_CODE) {
+    return true;
+  }
+
+  const telegramId = ctx.from?.id ? String(ctx.from.id) : '';
+
+  if (telegramId && env.ADMIN_IDS.includes(telegramId)) {
+    return true;
+  }
+
+  const existingUser = telegramId
+    ? await services.bookingService.findUserByTelegramId(telegramId)
+    : null;
+
+  if (existingUser) {
+    return true;
+  }
+
+  await ctx.reply(payload ? START_INVITE_INVALID_MESSAGE : START_INVITE_ONLY_MESSAGE);
+  return false;
+}
+
 function buildBlockedMessage(user, supportContact) {
   const lines = [BOT_TEXTS.BLOCKED];
 
@@ -21,6 +64,12 @@ function buildBlockedMessage(user, supportContact) {
 
 export function registerCommands(bot, { env, services }) {
   bot.start(async (ctx) => {
+    const isAllowed = await isAllowedByStartInvite(ctx, { env, services });
+
+    if (!isAllowed) {
+      return;
+    }
+
     await resetSceneSession(ctx, {
       logMessage: 'Scene session reset by /start',
       reason: SCENE_EXIT_REASONS.GLOBAL_NAVIGATION,
